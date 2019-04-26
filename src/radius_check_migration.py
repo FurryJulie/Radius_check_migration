@@ -30,7 +30,7 @@ import subprocess
 import progressbar
 
 
-BAR = progressbar.ProgressBar(max_value=progressbar.UnknownLength, redirect_stdout=True)
+BAR = progressbar.ProgressBar(max_value=progressbar.UnknownLength, redirect_stdout=False)
 
 def usage():
     message = "Usage: " \
@@ -139,17 +139,12 @@ def radtest(users, rad_ip, rad_port, rad_secret, tout, retry):
         tries = 0
         while tries <= retry:
             tries += 1
-            #print("try : " + str(user) + " , " + str(pwd))
             try:
-                #print("/usr/bin/radtest" + "-4" + str(user) + str(pwd) + str(rad_ip) + str(rad_port) +  str(rad_secret))
                 output = subprocess.check_output(["/usr/bin/radtest", "-4", str(user), str(pwd), str(rad_ip), str(rad_port), str(rad_secret)], timeout=tout)
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-                #print("User: " + str(user) + " pwd: " + str(pwd) + " radtest returned an error, retry " + str(tries))
-                time.sleep(0.25)
+                time.sleep(0.07)
                 continue
             else:
-                #print("User : " + str(user) + " ok.")
-                #print(str(output))
                 radtest_output[str(user)] = str(output)
                 found = True
                 found_users += 1
@@ -158,37 +153,58 @@ def radtest(users, rad_ip, rad_port, rad_secret, tout, retry):
         if not found:
                 print("User: " + str(user) + " pwd: " + str(pwd) + " radtest returned an error.")
                 sys.exit(1)
-        time.sleep(0.25)
+        time.sleep(0.07)
 
     return radtest_output
 
-def check_rad_replies(radtest_output1, radtest_output2):
+def check_rad_replies(radtest_output1, radtest_output2, ip1, ip2):
     '''
     Check if radius replies are the same for the 2 servers.
     '''
 
-    if len(radtest_output1) != len(radtest_output2):
+    if len(radtest_output1.keys()) != len(radtest_output2.keys()):
         print("Output from server 1 and server 2 arent the same.")
         sys.exit(1)
 
     error = False
 
-    for user, out in radtest_output1:
-        if str(user) not in radtest_output2:
+    for user, out1 in radtest_output1.items():
+        if str(user) not in radtest_output2.keys():
             print("Error for user " + str(user))
             error = True
             continue
 
-        if out == radtest_output2[str(user)]:
+        # Verify if outputs are exactly the same
+        if out1 == radtest_output2[str(user)]:
             continue
+        else:
+            user_output1 = str(out1).split("\\n")
+            user_output2 = str(str(radtest_output2[str(user)]).strip()).split("\\n")
 
-        user_output1 = str(str(out).strip()).split(" ")
-        user_output2 = str(str(radtest_output2[str(user)]).strip()).split("\n")
-
-        for string in user_output1:
-            if str(string).strip() not in user_output2:
+            if len(user_output1) != len(user_output2):
                 print("Error for user " + str(user))
                 error = True
+                continue
+
+            ver = 0
+            for string in user_output1:
+                ver += 1
+                if str(ip1) in str(string) or str(ip2) in str(string):
+                    continue
+                else:
+                    if str(string).strip() not in user_output2:
+                        print("Error for user " + str(user))
+                        error = True
+                        break
+
+        if error:
+            print("Error found for user : " + str(user))
+            sys.exit(1)
+
+    if not error:
+        print("Checked " + str(len(radtest_output1.keys())) + " entries. OK.")
+    else:
+        print("Error found.")
 
 
 def main():
@@ -196,10 +212,13 @@ def main():
     # get all users from the users file and parse them into a user-password array
 
     users = get_radius_users_from_file(str(sys.argv[1]).strip())
+    BAR = progressbar.ProgressBar(max_value=progressbar.UnknownLength, redirect_stdout=False)
+    BAR.update(0)
     out1 = radtest(users, str(sys.argv[2]), str(sys.argv[3]), str(sys.argv[4]), 5, 1)
+    BAR = progressbar.ProgressBar(max_value=progressbar.UnknownLength, redirect_stdout=False)
     BAR.update(0)
     out2 = radtest(users, str(sys.argv[5]), str(sys.argv[6]), str(sys.argv[7]), 5, 1)
-    check_rad_replies(out1, out2)
+    check_rad_replies(out1, out2, str(sys.argv[2]), str(sys.argv[5]))
 
 
 if __name__ == "__main__":

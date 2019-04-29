@@ -157,6 +157,20 @@ def radtest(users, rad_ip, rad_port, rad_secret, tout, retry):
 
     return radtest_output
 
+def print_rad_replies_error(out1, out2, ip1, ip2):
+    out1  = str(out1).split("\\n")
+    out2 = str(str(out2).strip()).split("\\n")
+
+    print("Server " + str(ip1) + " replied:")
+    for line in out1:
+        print(str(line)) #.strip('\\t'))
+    print("Server " + str(ip2) + " replied:")
+    for line in out2:
+        print(str(line)) #.strip('\\t'))
+
+    sys.exit(1)
+
+
 def check_rad_replies(radtest_output1, radtest_output2, ip1, ip2):
     '''
     Check if radius replies are the same for the 2 servers.
@@ -167,35 +181,41 @@ def check_rad_replies(radtest_output1, radtest_output2, ip1, ip2):
         sys.exit(1)
 
     error = False
+    error_replies = []
 
     for user, out1 in radtest_output1.items():
         if str(user) not in radtest_output2.keys():
-            print("Error for user " + str(user))
+            print("Error for user " + str(user) + ": User not found in server " + str(ip2) + " replies")
             error = True
             continue
 
+        out2 = radtest_output2[str(user)]
         # Verify if outputs are exactly the same
-        if out1 == radtest_output2[str(user)]:
+        if out1 == out2:
             continue
         else:
             user_output1 = str(out1).split("\\n")
-            user_output2 = str(str(radtest_output2[str(user)]).strip()).split("\\n")
+            user_output2 = str(str(out2).strip()).split("\\n")
 
             if len(user_output1) != len(user_output2):
-                print("Error for user " + str(user))
-                error = True
+                print("Error for user " + str(user) + ": incomplete reply.")
+                print_rad_replies_error(out1, out2, ip1, ip2)
+                sys.exit(1)
+
                 continue
 
-            ver = 0
             for string in user_output1:
-                ver += 1
+                #string = str(string).strip("\\t")
                 if str(ip1) in str(string) or str(ip2) in str(string):
                     continue
                 else:
                     if str(string).strip() not in user_output2:
                         print("Error for user " + str(user))
-                        error = True
-                        break
+                        print("reply " + str(string))
+                        print("of server: " + str(ip1) + " not present in the replies of server: " + str(ip2))
+                        print("\n")
+                        print_rad_replies_error(out1, out2, ip1, ip2)
+                        sys.exit(1)
 
         if error:
             print("Error found for user : " + str(user))
